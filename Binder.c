@@ -46,7 +46,9 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
 
 
 
-
+/**
+*用于操作binder驱动，比如数据读写
+*/
 static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct binder_proc *proc = filp->private_data;
@@ -136,34 +138,45 @@ static void binder_transaction(struct binder_proc *proc,
 	struct binder_proc *target_proc;
 	struct binder_thread *target_thread = NULL;
 	struct binder_node *target_node = NULL;
-	struct list_head *target_list;
-	wait_queue_head_t *target_wait;
+	struct list_head *target_list;//todo队列
+	wait_queue_head_t *target_wait;//等待队列
 	struct binder_transaction *in_reply_to = NULL;
+
+
+	//下面是数据包的路由过程
+	// handle -> binder_ref -> binder_node -> binder_proc
 	
 
-	if (reply) {
+	if (reply) {//server进程发给驱动的数据
 		in_reply_to = thread->transaction_stack;
 		thread->transaction_stack = in_reply_to->to_parent;
 
 		target_thread = in_reply_to->from;//找到需要回复的线程
 		target_proc = target_thread->proc;
-	} else {
-		if (tr->target.handle) {
+	} else {//client进程发给驱动的数据
+
+		if (tr->target.handle) {// handle != 0，表示目标服务为普通Server
+
 			struct binder_ref *ref;
+
+			//通过handle找到binder_ref
 			ref = binder_get_ref(proc, tr->target.handle);
+
+			//通过binder_ref找到binder_node
 			target_node = ref->node;
-		} else {
+
+		} else {// handle == 0，表示目标服务为ServiceManager
 			target_node = binder_context_mgr_node;
 		}
 		
-
+		//通过binder_node找到目标进程
 		target_proc = target_node->proc;
         //从目标进程的空闲线程中寻找一个合适的线程处理任务
 		target_thread = . . . 
 		
 	}
 
-	//上面这一段代码的目的就是找到target_proc或target_proc，也即目标进程或目标线程
+	//下面这一段代码的目的是找到目标进程或目标线程的todo队列和wait队列
 
 	if (target_thread) {//找到合适的线程就交由该线程处理
 		target_list = &target_thread->todo;
@@ -203,7 +216,7 @@ static void binder_transaction(struct binder_proc *proc,
 	copy_from_user(offp, tr->data.ptr.offsets, tr->offsets_size);
 
 
-	//下面这段代码对发送数据中的binder服务对象和binder代理对象进行特殊处理
+	//下面这段循环代码对发送数据中的binder服务对象和binder代理对象进行特殊处理
 	//如果只是普通数据，这段代码不会执行
 		
 
@@ -216,12 +229,17 @@ static void binder_transaction(struct binder_proc *proc,
 
 		switch (fp->type) {
 		case BINDER_TYPE_BINDER:{//处理binder服务对象
+
 			struct binder_ref *ref;
+
 			struct binder_node *node = binder_get_node(proc, fp->binder);
 			if (node == NULL) {
+				//在发送端binder_proc的红黑树中创建binder_node
 				node = binder_new_node(proc, fp->binder, fp->cookie);
 			}
 		
+		    //在接收端binder_proc的红黑树中创建binder_ref
+		    //这里内核会为服务分配唯一的handle值，保存在ref->desc中
 			ref = binder_get_ref_for_node(target_proc, node);
 			
 			if (fp->type == BINDER_TYPE_BINDER)
@@ -229,22 +247,27 @@ static void binder_transaction(struct binder_proc *proc,
 			else
 				fp->type = BINDER_TYPE_WEAK_HANDLE;
 
-			fp->handle = ref->desc;
+			fp->handle = ref->desc;//desc即为服务的handle值
 			
 		} break;
 
 		case BINDER_TYPE_HANDLE: {//处理binder代理对象
+
 			struct binder_ref *ref = binder_get_ref(proc, fp->handle);
 		
-			if (ref->node->proc == target_proc) {
+			if (ref->node->proc == target_proc) {//如果client和server运行在同一个进程
 				if (fp->type == BINDER_TYPE_HANDLE)
-					fp->type = BINDER_TYPE_BINDER;
+					fp->type = BINDER_TYPE_BINDER;//更改binder类型
 				else
 					fp->type = BINDER_TYPE_WEAK_BINDER;
+
 				fp->binder = ref->node->ptr;
 				fp->cookie = ref->node->cookie;
-			} else {
+
+			} else {//如果client和server运行在不同进程
+
 				struct binder_ref *new_ref;
+				//在接收端binder_proc的红黑树中创建binder_ref
 				new_ref = binder_get_ref_for_node(target_proc, ref->node);
 				fp->handle = new_ref->desc;
 			}
