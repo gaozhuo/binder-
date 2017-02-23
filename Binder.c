@@ -403,3 +403,28 @@ struct binder_thread {
 	struct list_head todo;//todo队列，即该进程需要处理的任务
 	wait_queue_head_t wait;//等待队列，进程空闲时在此队列上休眠
 };
+
+
+
+struct binder_transaction_data {
+	union {
+		size_t	handle;	// handle
+		void	*ptr;
+	} target;
+	void		*cookie;
+	unsigned int	code; // code
+
+	unsigned int	flags;
+	pid_t		sender_pid;
+	uid_t		sender_euid;
+	size_t		data_size;
+	size_t		offsets_size;
+
+	union {
+		struct {
+			const void	*buffer;
+			const void	*offsets;
+		} ptr;
+		uint8_t	buf[8];
+	} data;// RPC数据
+};
