@@ -14,9 +14,6 @@ int main(int argc, char **argv)
 }
 
 
-
-
-
 int svcmgr_handler(struct binder_state *bs,
                    struct binder_transaction_data *txn,
                    struct binder_io *msg,
